@@ -3,6 +3,7 @@ package TCPProxyProto
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	//	"io"
@@ -153,8 +154,8 @@ func (pp *ProxyProto) ParseBodyLength() *ProxyProto {
 			pp.err = NewError(RPOXY_PROTO_ERROR_FORMAT, "not found Content Length's Line End")
 			return pp
 		}
-
-		lengthString := string(pp.headBuff[index+len(PROXY_PROTO_BODY_LENGTH) : indexEnd])
+		lengthString := string(pp.headBuff[index+len(PROXY_PROTO_BODY_LENGTH) : index+indexEnd])
+		fmt.Println(lengthString)
 		lengthInt, err := strconv.Atoi(lengthString)
 		if err != nil {
 			pp.err = NewError(RPOXY_PROTO_ERROR_FORMAT, err.Error())
@@ -184,6 +185,10 @@ func (pp *ProxyProto) GetError() Error {
 
 func (pp *ProxyProto) HaveError() bool {
 	return pp.err.GetCode() == 0
+}
+
+func (pp *ProxyProto) GetBody() []byte {
+	return pp.bodyBuff
 }
 
 func NewProxyProto() *ProxyProto {
