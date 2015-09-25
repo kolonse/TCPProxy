@@ -2,7 +2,7 @@
 package main
 
 import (
-	. "RTCPProxyServer/TCPServer"
+	. "TCPProxy/RTCPProxyServer/TCPServer"
 	"encoding/json"
 	"os"
 )

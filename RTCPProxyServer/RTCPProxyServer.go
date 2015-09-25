@@ -5,8 +5,8 @@ import (
 	"KolonseWeb"
 	"KolonseWeb/HttpLib"
 	"KolonseWeb/Type"
-	"RTCPProxyServer/TCPServer"
-	. "TCPProxyProto"
+	"TCPProxy/RTCPProxyServer/TCPServer"
+	. "TCPProxy/TCPProxyProto"
 )
 
 func main() {

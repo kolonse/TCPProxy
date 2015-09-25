@@ -2,8 +2,8 @@
 package main
 
 import (
-	"RTCPProxyServer/TCPServer"
-	"TCPProxyProto"
+	"TCPProxy/RTCPProxyServer/TCPServer"
+	"TCPProxy/TCPProxyProto"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"

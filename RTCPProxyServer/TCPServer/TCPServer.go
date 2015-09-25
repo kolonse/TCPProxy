@@ -3,11 +3,10 @@ package TCPServer
 
 import (
 	"KolonseWeb"
-	. "TCPProxyProto"
+	. "TCPProxy/TCPProxyProto"
 	"fmt"
 	//	"io"
 	"net"
-	"regexp"
 	"strconv"
 	"time"
 )
@@ -70,58 +69,37 @@ func (si *ServerInfo) Dump() string {
 	return ret
 }
 
-func (si *ServerInfo) ReadLessNByte(conn net.Conn, nBytes int, buff []byte) (int, error) {
-	totalRecv := 0
-	for {
-		// 设置超时时间为10S  如果没有读取到足够的数据 那么表示非客户端
-		conn.SetReadDeadline(time.Now().Add(time.Second * 10)) // 10S后超时
-		n, err := conn.Read(buff)
-		conn.SetReadDeadline(time.Time{})
-		if err != nil {
-			return totalRecv + n, err
-		}
-		totalRecv += n
-		if totalRecv >= nBytes {
-			return totalRecv, nil
-		}
-	}
-}
-
 func (si *ServerInfo) handleConnection(conn *net.TCPConn) {
 	KolonseWeb.DefaultLogs().Info("Recv Conn,RemoteAddr:%v %v %v %v",
 		conn.RemoteAddr().Network(), conn.RemoteAddr().String(),
 		conn.LocalAddr().Network(), conn.LocalAddr().String())
 	// 收到一个连接 读取开始 i'm proxy server
-	buff := make([]byte, 10000) //  缓存长度
-	n, err := si.ReadLessNByte(conn, len(PROXY_PROTO_HEAD_MARK), buff)
-	// 需要检测 time out
-	bClose := false
-	var validID = regexp.MustCompile(`.+i/o timeout`)
-	if validID.MatchString(err.Error()) {
-		KolonseWeb.DefaultLogs().Warning("Addr r_%v|l_%v Warning:%v", conn.RemoteAddr(), conn.LocalAddr(), err.Error())
-	} else if err != nil {
-		KolonseWeb.DefaultLogs().Error("Addr r_%v|l_%v Error:%v", conn.RemoteAddr(), conn.LocalAddr(), err.Error())
-		conn.Close()
-		bClose = true
-	}
+	buff := make([]byte, 512) //  缓存长度
 	// 检测是否是 PROXY SERVER
-	if CheckHeadMark(buff) {
-		if !bClose {
-			si.ProcessProxyConn(conn, n, buff)
+	for {
+		n, err := conn.Read(buff)
+		if err != nil { // 连接出现错误
+			conn.Close()
+			KolonseWeb.DefaultLogs().Error("Addr r_%v|l_%v Error:%v", conn.RemoteAddr(), conn.LocalAddr(), err.Error())
+			return
 		}
-	} else { // 如果是请求连接 那么需要 进行连接会话处理
-		if !bClose { // 如果关闭连接 那么就需要通知关闭
-			si.ProcessReqConn(conn, n, buff)
+		status := CheckHeadMark(buff[:n])
+		if status == RPOXY_PROTO_ERROR_LENGTH { // 长度不足 需要继续接收
+			continue
+		} else if status == RPOXY_PROTO_SUCCESS { // 说明属于 代理协议
+			si.ProcessProxyConn(conn, buff[:n])
+		} else {
+			si.ProcessReqConn(conn, buff[:n])
 		}
 	}
 }
 
-func (si *ServerInfo) ProcessProxyConn(conn *net.TCPConn, nRecvdBytes int, buff []byte) {
-
+func (si *ServerInfo) ProcessProxyConn(conn *net.TCPConn, buff []byte) {
+	KolonseWeb.DefaultLogs().Info("Addr r_%v|l_%v 处理代理协议", conn.RemoteAddr(), conn.LocalAddr())
 }
 
-func (si *ServerInfo) ProcessReqConn(conn *net.TCPConn, nRecvdBytes int, buff []byte) {
-
+func (si *ServerInfo) ProcessReqConn(conn *net.TCPConn, buff []byte) {
+	KolonseWeb.DefaultLogs().Info("Addr r_%v|l_%v 处理请求", conn.RemoteAddr(), conn.LocalAddr())
 	return
 }
 
