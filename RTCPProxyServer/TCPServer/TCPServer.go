@@ -50,6 +50,7 @@ type ServerInfo struct {
 	Port   uint16
 	Desc   string
 	Status string // 服务状态
+	Ip     string
 	ForWho Who
 	Parter Who
 }
@@ -61,6 +62,7 @@ func (si *ServerInfo) GetStatus() string {
 func (si *ServerInfo) Dump() string {
 	ret := ""
 	ret += fmt.Sprintln("Domain:", si.Domain)
+	ret += fmt.Sprintln("Ip:", si.Ip)
 	ret += fmt.Sprintln("Port:", si.Port)
 	ret += fmt.Sprintln("Desc:", si.Desc)
 	ret += fmt.Sprintln("Status:", si.Status)
@@ -81,21 +83,54 @@ func (si *ServerInfo) handleConnection(conn *net.TCPConn) {
 		if err != nil { // 连接出现错误
 			conn.Close()
 			KolonseWeb.DefaultLogs().Error("Addr r_%v|l_%v Error:%v", conn.RemoteAddr(), conn.LocalAddr(), err.Error())
-			return
+			break
 		}
 		status := CheckHeadMark(buff[:n])
 		if status == RPOXY_PROTO_ERROR_LENGTH { // 长度不足 需要继续接收
 			continue
 		} else if status == RPOXY_PROTO_SUCCESS { // 说明属于 代理协议
+			pp := NewProxyProto()
+			Err := pp.Parse(buff[:n]).GetError()
+			if Err.GetCode() == RPOXY_PROTO_ERROR_LENGTH {
+				continue
+			} else if Err.GetCode() != RPOXY_PROTO_SUCCESS {
+				KolonseWeb.DefaultLogs().Error("Addr r_%v|l_%v Error:%v", conn.RemoteAddr(), conn.LocalAddr(), Err.Error())
+				conn.Close()
+				break
+			}
+			KolonseWeb.DefaultLogs().Info("RECV:\r\n%v", pp.HeaderString())
+			KolonseWeb.DefaultLogs().Info("")
 			si.ProcessProxyConn(conn, buff[:n])
+			break
 		} else {
 			si.ProcessReqConn(conn, buff[:n])
+			break
 		}
 	}
 }
 
 func (si *ServerInfo) ProcessProxyConn(conn *net.TCPConn, buff []byte) {
 	KolonseWeb.DefaultLogs().Info("Addr r_%v|l_%v 处理代理协议", conn.RemoteAddr(), conn.LocalAddr())
+	for {
+		index := 0
+		n, err := conn.Read(buff[index:])
+		if err != nil { // 连接出现错误
+			conn.Close()
+			KolonseWeb.DefaultLogs().Error("Addr r_%v|l_%v Error:%v", conn.RemoteAddr(), conn.LocalAddr(), err.Error())
+			break
+		}
+		pp := NewProxyProto()
+		Err := pp.Parse(buff[:n]).GetError()
+		if Err.GetCode() == RPOXY_PROTO_ERROR_LENGTH {
+			continue
+		} else if Err.GetCode() != RPOXY_PROTO_SUCCESS {
+			KolonseWeb.DefaultLogs().Error("Addr r_%v|l_%v Error:%v", conn.RemoteAddr(), conn.LocalAddr(), Err.Error())
+			conn.Close()
+			break
+		}
+		KolonseWeb.DefaultLogs().Info("RECV:\r\n%v", pp.HeaderString())
+		KolonseWeb.DefaultLogs().Info("")
+	}
 }
 
 func (si *ServerInfo) ProcessReqConn(conn *net.TCPConn, buff []byte) {

@@ -3,7 +3,6 @@ package TCPProxyProto
 
 import (
 	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 	//	"io"
@@ -67,8 +66,9 @@ type ProxyProto struct {
 	method     string
 	version    string
 	localAddr  string
-	remote     string
-	bodyLenght int
+	remoteAddr string
+	bodyLength int
+	headLength int
 	bodyBuff   []byte
 	headBuff   []byte
 	buff       []byte
@@ -83,10 +83,8 @@ func (pp *ProxyProto) Parse(buff []byte) *ProxyProto {
 	pp.buff = make([]byte, len(buff))
 	copy(pp.buff, buff)
 	return pp.ParseMark().
-		ParseBodyLength().
 		ParseBody().
 		ParseProto().
-		ParseVersion().
 		ParseLocalAddr().
 		ParseRemoteAddr()
 }
@@ -105,8 +103,9 @@ func (pp *ProxyProto) ParseMark() *ProxyProto {
 		if index == -1 { // 只要没找到协议头结尾标志 那么就认为长度不足
 			pp.err = NewError(RPOXY_PROTO_ERROR_LENGTH, "not found head mark end")
 		} else {
-			pp.headBuff = make([]byte, index+len(RPOXY_PROTO_HEAD_END))
-			copy(pp.headBuff, pp.buff[:index+len(RPOXY_PROTO_HEAD_END)])
+			pp.headBuff = make([]byte, index-len(PROXY_PROTO_HEAD_MARK))
+			copy(pp.headBuff, pp.buff[len(PROXY_PROTO_HEAD_MARK):index])
+			pp.headLength = index + len(RPOXY_PROTO_HEAD_END)
 		}
 	}
 	//	if( )
@@ -115,7 +114,16 @@ func (pp *ProxyProto) ParseMark() *ProxyProto {
 
 func (pp *ProxyProto) ParseProto() *ProxyProto { //  协议必定在 mark 之后
 	if pp.HaveError() {
-
+		//  读取协议
+		index := strings.Index(string(pp.headBuff), " ")
+		if index == -1 { // 协议字段就是 第一行空格前的字符串
+			pp.err = NewError(RPOXY_PROTO_ERROR_FORMAT, "not found Proto")
+			return pp
+		}
+		pp.method = string(pp.headBuff[0:index])
+		//提取版本头
+		indexEnd := strings.Index(string(pp.headBuff), RPOXY_PROTO_LINE_END)
+		pp.version = string(pp.headBuff[index+1 : indexEnd])
 	}
 	return pp
 }
@@ -126,6 +134,7 @@ func (pp *ProxyProto) ParseLocalAddr() *ProxyProto {
 	}
 	return pp
 }
+
 func (pp *ProxyProto) ParseRemoteAddr() *ProxyProto {
 	if pp.HaveError() {
 
@@ -133,19 +142,12 @@ func (pp *ProxyProto) ParseRemoteAddr() *ProxyProto {
 	return pp
 }
 
-func (pp *ProxyProto) ParseVersion() *ProxyProto {
-	if pp.HaveError() {
-
-	}
-	return pp
-}
-
-func (pp *ProxyProto) ParseBodyLength() *ProxyProto {
+func (pp *ProxyProto) parseBodyLength() *ProxyProto {
 	if pp.HaveError() {
 		//  查找 body length 字段
 		index := strings.Index(string(pp.headBuff), string(PROXY_PROTO_BODY_LENGTH))
-		if index == -1 {
-			pp.err = NewError(RPOXY_PROTO_ERROR_FORMAT, "not found Content Length")
+		if index == -1 { //  如果没有 Content Length 字段 那么就认为是 0
+			//pp.err = NewError(RPOXY_PROTO_ERROR_FORMAT, "not found Content Length")
 			return pp
 		}
 
@@ -155,27 +157,89 @@ func (pp *ProxyProto) ParseBodyLength() *ProxyProto {
 			return pp
 		}
 		lengthString := string(pp.headBuff[index+len(PROXY_PROTO_BODY_LENGTH) : index+indexEnd])
-		fmt.Println(lengthString)
 		lengthInt, err := strconv.Atoi(lengthString)
 		if err != nil {
 			pp.err = NewError(RPOXY_PROTO_ERROR_FORMAT, err.Error())
 			return pp
 		}
-		pp.bodyLenght = lengthInt
+		pp.bodyLength = lengthInt
 	}
 	return pp
 }
 
 func (pp *ProxyProto) ParseBody() *ProxyProto {
+	pp.parseBodyLength()
 	if pp.HaveError() {
-		if len(pp.buff) < pp.bodyLenght+len(pp.headBuff) { // 长度不足
+		if pp.bodyLength == 0 { // 长度为0 就不进行解析BUFF
+			return pp
+		}
+		if len(pp.buff) < pp.bodyLength+pp.headLength { // 长度不足
 			pp.err = NewError(RPOXY_PROTO_ERROR_LENGTH, "parse body: length not enougth")
 			return pp
 		}
 
-		pp.bodyBuff = make([]byte, pp.bodyLenght)
-		copy(pp.bodyBuff, pp.buff[len(pp.headBuff):])
+		pp.bodyBuff = make([]byte, pp.bodyLength)
+		copy(pp.bodyBuff, pp.buff[pp.headLength:])
 	}
+	return pp
+}
+
+func (pp *ProxyProto) StringifyConn() *ProxyProto {
+	pp.headBuff = append(pp.headBuff, []byte(PROXY_PROTO_HEAD_PROTO_CONN)...)
+	pp.headBuff = append(pp.headBuff, []byte(RPOXY_PROTO_LINE_END)...)
+	return pp
+}
+
+func (pp *ProxyProto) StringifyREQ() *ProxyProto {
+	pp.headBuff = append(pp.headBuff, []byte(PROXY_PROTO_HEAD_PROTO_REQ)...)
+	pp.headBuff = append(pp.headBuff, []byte(RPOXY_PROTO_LINE_END)...)
+	return pp
+}
+
+func (pp *ProxyProto) StringifyRES() *ProxyProto {
+	pp.headBuff = append(pp.headBuff, []byte(PROXY_PROTO_HEAD_PROTO_RES)...)
+	pp.headBuff = append(pp.headBuff, []byte(RPOXY_PROTO_LINE_END)...)
+	return pp
+}
+
+func (pp *ProxyProto) StringifyClose() *ProxyProto {
+	pp.headBuff = append(pp.headBuff, []byte(PROXY_PROTO_HEAD_PROTO_CLOSE)...)
+	pp.headBuff = append(pp.headBuff, []byte(RPOXY_PROTO_LINE_END)...)
+	return pp
+}
+
+func (pp *ProxyProto) StringifyLocalAddr(addr string) *ProxyProto {
+	pp.headBuff = append(pp.headBuff, []byte(RPOXY_PROTO_LOCAL_ADDR)...)
+	pp.headBuff = append(pp.headBuff, []byte(addr)...)
+	pp.headBuff = append(pp.headBuff, []byte(RPOXY_PROTO_LINE_END)...)
+	return pp
+}
+
+func (pp *ProxyProto) StringifyRemoteAddr(addr string) *ProxyProto {
+	pp.headBuff = append(pp.headBuff, []byte(RPOXY_PROTO_REMOTE_ADDR)...)
+	pp.headBuff = append(pp.headBuff, []byte(addr)...)
+	pp.headBuff = append(pp.headBuff, []byte(RPOXY_PROTO_LINE_END)...)
+	return pp
+}
+
+func (pp *ProxyProto) StringifyBody(body []byte) *ProxyProto {
+	if len(body) == 0 { // 如果长度为 0 那么就不进行处理 body
+		return pp
+	}
+	bodyLenString := strconv.Itoa(len(body))
+	pp.headBuff = append(pp.headBuff, []byte(PROXY_PROTO_BODY_LENGTH)...)
+	pp.headBuff = append(pp.headBuff, []byte(bodyLenString)...)
+	pp.headBuff = append(pp.headBuff, []byte(RPOXY_PROTO_LINE_END)...)
+	pp.bodyBuff = make([]byte, len(body))
+	copy(pp.bodyBuff, body)
+	return pp
+}
+
+func (pp *ProxyProto) StringifyEnd() *ProxyProto {
+	pp.buff = append(pp.buff, []byte(PROXY_PROTO_HEAD_MARK)...)
+	pp.buff = append(pp.buff, pp.headBuff...)
+	pp.buff = append(pp.buff, []byte(RPOXY_PROTO_HEAD_END)...)
+	pp.buff = append(pp.buff, pp.bodyBuff...)
 	return pp
 }
 
@@ -189,6 +253,30 @@ func (pp *ProxyProto) HaveError() bool {
 
 func (pp *ProxyProto) GetBody() []byte {
 	return pp.bodyBuff
+}
+
+func (pp *ProxyProto) GetMethod() string {
+	return pp.method
+}
+
+func (pp *ProxyProto) GetVersion() string {
+	return pp.version
+}
+
+func (pp *ProxyProto) GetLocalAddr() string {
+	return pp.localAddr
+}
+
+func (pp *ProxyProto) GetRemoteAddr() string {
+	return pp.remoteAddr
+}
+
+func (pp *ProxyProto) GetBodyLength() int {
+	return pp.bodyLength
+}
+
+func (pp *ProxyProto) GetBuff() []byte {
+	return pp.buff
 }
 
 func NewProxyProto() *ProxyProto {

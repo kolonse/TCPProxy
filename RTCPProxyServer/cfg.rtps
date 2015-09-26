@@ -4,6 +4,6 @@
 		"Port":9878,
 		"Status":"wait",
 		"Desc":"for pay server",
-		"ParterIp":"127.0.0.1"
+		"Ip":"127.0.0.1"
 	}
 }
