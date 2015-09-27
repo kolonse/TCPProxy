@@ -48,6 +48,9 @@ func LoadCfg() {
 		panic(err)
 		return
 	}
+	for key, _ := range TCPServerManager {
+		TCPServerManager[key].Parters = make(map[string]Who)
+	}
 }
 
 func init() {

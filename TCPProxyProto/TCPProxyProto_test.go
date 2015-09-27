@@ -57,10 +57,10 @@ func Test_Stringify(t *testing.T) {
 	//	return
 	//}
 
-	//if string(pp_t.GetRemoteAddr()) != "56789" {
-	//	t.Error("GetRemoteAddr error")
-	//	return
-	//}
+	if string(pp_t.GetRemoteAddr()) != "56789" {
+		t.Error("GetRemoteAddr error")
+		return
+	}
 
 	if string(pp_t.GetMethod()) != "CONN" {
 		t.Error(pp_t.GetMethod())

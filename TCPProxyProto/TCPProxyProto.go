@@ -45,6 +45,13 @@ func NewError(code int, message string) Error {
 	}
 }
 
+const (
+	PROXY_PROTO_METHOD_CONN  = "CONN"
+	PROXY_PROTO_METHOD_REQ   = "REQ"
+	PROXY_PROTO_METHOD_RES   = "RES"
+	PROXY_PROTO_METHOD_CLOSE = "CLOSE"
+)
+
 /**
 *	TCP 协议
  */
@@ -137,7 +144,18 @@ func (pp *ProxyProto) ParseLocalAddr() *ProxyProto {
 
 func (pp *ProxyProto) ParseRemoteAddr() *ProxyProto {
 	if pp.HaveError() {
+		index := strings.Index(string(pp.headBuff), string(RPOXY_PROTO_REMOTE_ADDR))
+		if index == -1 { //  如果没有 Content Length 字段 那么就认为是 0
+			//pp.err = NewError(RPOXY_PROTO_ERROR_FORMAT, "not found Content Length")
+			return pp
+		}
 
+		indexEnd := strings.Index(string(pp.headBuff[index:]), string(RPOXY_PROTO_LINE_END))
+		if indexEnd == -1 {
+			pp.err = NewError(RPOXY_PROTO_ERROR_FORMAT, "not found RemoteAddr's Line End")
+			return pp
+		}
+		pp.remoteAddr = string(pp.headBuff[index+len(RPOXY_PROTO_REMOTE_ADDR) : index+indexEnd])
 	}
 	return pp
 }
