@@ -2,18 +2,20 @@
 package main
 
 import (
-	"TCPProxy/RTCPProxyServer/TCPServer"
 	"TCPProxy/TCPProxyProto"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 )
 
 func RegisterProxy() *TCPProxyProto.RespProto {
-	var httpHost = fmt.Sprintf("http://%v/RegisterProxy?domain=%v&name=%v", *Server, *ProxyDomain, *ProxyName)
+	var httpHost = fmt.Sprintf("http://%v/RegisterProxy?domain=%v&name=%v&port=%v",
+		*Server, *ProxyDomain, *ProxyName,
+		*UsePort)
 	fmt.Println("Request " + httpHost)
 	resp, err := http.Get(httpHost)
 	if err != nil {
@@ -24,9 +26,7 @@ func RegisterProxy() *TCPProxyProto.RespProto {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(string(buff))
-	serverInfo := TCPServer.NewServerInfo()
-	respInfo := TCPProxyProto.NewRespProto(0, "", serverInfo)
+	respInfo := TCPProxyProto.NewRespProto(0, "", nil)
 	err = json.Unmarshal(buff, &respInfo)
 	if err != nil {
 		panic(err)
@@ -41,9 +41,12 @@ func CheckServerStatus(rp *TCPProxyProto.RespProto) bool {
 	return true
 }
 
-func ServerStart(serverInfo *TCPServer.ServerInfo) {
+func ServerStart() {
 	// 连接服务端
-	serverAddr := fmt.Sprintf("%v:%v", serverInfo.Ip, serverInfo.Port)
+	ip := *Server
+	index := strings.Index(ip, ":")
+	ip = ip[:index]
+	serverAddr := fmt.Sprintf("%v:%v", ip, *UsePort+1)
 	fmt.Println("CONN ", serverAddr)
 	conn, err := net.Dial("tcp", serverAddr)
 	if err != nil { // 连接不上服务就直接退出
@@ -164,10 +167,7 @@ func main() {
 			return
 		}
 
-		serverInfo := respInfo.Extern.(*TCPServer.ServerInfo)
-		fmt.Println(serverInfo.Dump())
-
-		ServerStart(serverInfo)
+		ServerStart()
 		time.Sleep(500 * time.Millisecond)
 	}
 }
