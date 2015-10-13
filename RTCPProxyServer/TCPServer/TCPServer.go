@@ -194,17 +194,17 @@ func (si *ServerInfo) Start(port int) error {
 	si.Channel = t.NewTCPServer(channelHost)
 	si.Server = t.NewTCPServer(serverHost)
 
-	si.Channel.Register("newConnCB", function.Bind(si.channelConn, function.PH(function.P_1)))
+	si.Channel.Register("newConnCB", function.Bind(si.channelConn, function.P_1))
 	si.Channel.Register("recvCB", function.Bind(si.channelRecv,
-		function.PH(function.P_1),
-		function.PH(function.P_2),
-		function.PH(function.P_3)))
+		function.P_1,
+		function.P_2,
+		function.P_3))
 
-	si.Server.Register("newConnCB", function.Bind(si.serverConn, function.PH(function.P_1)))
+	si.Server.Register("newConnCB", function.Bind(si.serverConn, function.P_1))
 	si.Server.Register("recvCB", function.Bind(si.serverRecv,
-		function.PH(function.P_1),
-		function.PH(function.P_2),
-		function.PH(function.P_3)))
+		function.P_1,
+		function.P_2,
+		function.P_3))
 	go si.Channel.Server()
 	go si.Server.Server()
 	return nil
