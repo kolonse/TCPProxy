@@ -26,6 +26,7 @@ func RegisterProxy() *TCPProxyProto.RespProto {
 	if err != nil {
 		panic(err)
 	}
+	fmt.Println(string(buff))
 	respInfo := TCPProxyProto.NewRespProto(0, "", nil)
 	err = json.Unmarshal(buff, &respInfo)
 	if err != nil {
@@ -71,7 +72,6 @@ func ServerStart() {
 	//bExit := make(chan bool, 1)
 	buff := make([]byte, 10000)
 	for {
-
 		n, err := conn.Read(buff)
 		if err != nil { //连接出现错误 关闭连接退出
 			fmt.Println(err.Error())

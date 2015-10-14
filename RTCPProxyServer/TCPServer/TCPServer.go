@@ -65,6 +65,7 @@ type ServerInfo struct {
 	ChannelConn Who
 	Server      *t.TCPServer
 	Parters     map[string]Who
+	Cache       []byte
 }
 
 func (si *ServerInfo) GetStatus() string {
@@ -120,24 +121,30 @@ func (si *ServerInfo) channelRecv(conn *t.TCPConn, buff []byte, err error) {
 		KolonseWeb.DefaultLogs().Error("隧道连接 Addr r_%v|l_%v Error:%v", conn.RemoteAddr(), conn.LocalAddr(), err.Error())
 		return
 	}
-	// 将接收到的数据进行解析 并发送到对应的连接上
-	pp := NewProxyProto()
-	Err := pp.Parse(buff).GetError()
-	if Err.GetCode() == RPOXY_PROTO_ERROR_LENGTH {
-		KolonseWeb.DefaultLogs().Error("Addr r_%v|l_%v Error:%v", conn.RemoteAddr(), conn.LocalAddr(), Err.Error())
-		conn.Close()
-		return
-	} else if Err.GetCode() != RPOXY_PROTO_SUCCESS {
-		KolonseWeb.DefaultLogs().Error("Addr r_%v|l_%v Error:%v", conn.RemoteAddr(), conn.LocalAddr(), Err.Error())
-		conn.Close()
-		return
-	}
-	KolonseWeb.DefaultLogs().Debug("RECV:%v %v", pp.GetMethod(), pp.GetVersion())
-	switch pp.GetMethod() { // 处理协议
-	case PROXY_PROTO_METHOD_CONN:
-		si.ProcessProtoConn(conn.Conn, pp)
-	case PROXY_PROTO_METHOD_RES:
-		si.ProcessProtoRes(conn.Conn, pp)
+	si.Cache = append(si.Cache, buff...)
+	for {
+		pp := NewProxyProto()
+		Err := pp.Parse(si.Cache).GetError()
+		if Err.GetCode() == RPOXY_PROTO_ERROR_LENGTH {
+			KolonseWeb.DefaultLogs().Warn("Addr r_%v|l_%v Warn:%v", conn.RemoteAddr(), conn.LocalAddr(), Err.Error())
+			return
+		} else if Err.GetCode() != RPOXY_PROTO_SUCCESS {
+			KolonseWeb.DefaultLogs().Error("Addr r_%v|l_%v Error:%v", conn.RemoteAddr(), conn.LocalAddr(), Err.Error())
+			conn.Close()
+			return
+		}
+		KolonseWeb.DefaultLogs().Debug("RECV:%v %v", pp.GetMethod(), pp.GetVersion())
+		switch pp.GetMethod() { // 处理协议
+		case PROXY_PROTO_METHOD_CONN:
+			si.ProcessProtoConn(conn.Conn, pp)
+		case PROXY_PROTO_METHOD_RES:
+			si.ProcessProtoRes(conn.Conn, pp)
+		}
+
+		si.Cache = si.Cache[pp.GetProtoLen():]
+		if len(si.Cache) <= ProtoMinLength() {
+			return
+		}
 	}
 }
 
@@ -177,7 +184,16 @@ func (si *ServerInfo) serverRecv(conn *t.TCPConn, buff []byte, err error) {
 		StringifyRemoteAddr(conn.RemoteAddr().String()).
 		StringifyBody(buff).
 		StringifyEnd()
+	fmt.Println("SEND:\n" + pp.HeaderString() + "\n")
 	// 将数据发送出去
+	if si.ChannelConn.conn == nil {
+		KolonseWeb.DefaultLogs().Error("服务连接 Addr r_%v|l_%v Error:%v",
+			conn.RemoteAddr(),
+			conn.LocalAddr(),
+			"隧道连接不存在")
+		conn.Close()
+		return
+	}
 	_, err = si.ChannelConn.conn.Write(pp.GetBuff())
 	if err != nil {
 		KolonseWeb.DefaultLogs().Error("服务连接 Addr r_%v|l_%v Error:%v",

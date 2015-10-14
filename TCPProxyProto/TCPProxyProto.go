@@ -297,6 +297,10 @@ func (pp *ProxyProto) GetBuff() []byte {
 	return pp.buff
 }
 
+func (pp *ProxyProto) GetProtoLen() int {
+	return pp.headLength + pp.bodyLength
+}
+
 func NewProxyProto() *ProxyProto {
 	return &ProxyProto{}
 }
@@ -308,6 +312,10 @@ func (pb *ProtoBuff) ProxyClose(localAddr, remoteAddr string) {
 	*pb = append((*pb)[length:], []byte(PROXY_PROTO_HEAD_MARK)...)
 	length += len(PROXY_PROTO_HEAD_MARK)
 	*pb = append((*pb)[length:], []byte(PROXY_PROTO_HEAD_PROTO_CLOSE)...)
+}
+
+func ProtoMinLength() int {
+	return len(PROXY_PROTO_HEAD_MARK) + len(RPOXY_PROTO_HEAD_END)
 }
 
 func CheckHeadMark(buff []byte) int {
