@@ -2,9 +2,10 @@
 package main
 
 import (
-	"TCPProxy/TCPProxyProto"
+	. "TCPProxy/TCPProxyProto"
 	"encoding/json"
 	"fmt"
+	"github.com/kolonse/kdp"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -12,31 +13,31 @@ import (
 	"time"
 )
 
-func RegisterProxy() *TCPProxyProto.RespProto {
+func RegisterProxy() *RespProto {
 	var httpHost = fmt.Sprintf("http://%v/RegisterProxy?domain=%v&name=%v&port=%v",
 		*Server, *ProxyDomain, *ProxyName,
 		*UsePort)
 	fmt.Println("Request " + httpHost)
 	resp, err := http.Get(httpHost)
 	if err != nil {
-		panic(err)
+		return nil
 	}
 	defer resp.Body.Close()
 	buff, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		panic(err)
+		return nil
 	}
 	fmt.Println(string(buff))
-	respInfo := TCPProxyProto.NewRespProto(0, "", nil)
+	respInfo := NewRespProto(0, "", nil)
 	err = json.Unmarshal(buff, &respInfo)
 	if err != nil {
-		panic(err)
+		return nil
 	}
 	return respInfo
 }
 
-func CheckServerStatus(rp *TCPProxyProto.RespProto) bool {
-	if rp.Code != TCPProxyProto.RPOXY_PROTO_SUCCESS {
+func CheckServerStatus(rp *RespProto) bool {
+	if rp.Code != RPOXY_PROTO_SUCCESS {
 		return false
 	}
 	return true
@@ -58,10 +59,11 @@ func ServerStart() {
 	connInfo := make(map[string]string)
 	connInfo["name"] = *ProxyName
 	body, _ := json.Marshal(connInfo)
-	pp := TCPProxyProto.NewProxyProto()
-	pp.StringifyConn().
+	pp := kdp.NewKDP()
+	pp.Add("Method", "CONN").
 		StringifyBody(body).
-		StringifyEnd()
+		Stringify()
+	fmt.Println(string(pp.GetBuff()))
 	_, err = conn.Write(pp.GetBuff())
 	if err != nil { // 如果出现连接失败 那么直接退出
 		conn.Close()
@@ -71,6 +73,7 @@ func ServerStart() {
 
 	//bExit := make(chan bool, 1)
 	buff := make([]byte, 10000)
+	var cache []byte
 	for {
 		n, err := conn.Read(buff)
 		if err != nil { //连接出现错误 关闭连接退出
@@ -79,17 +82,22 @@ func ServerStart() {
 			//bExit <- false
 			break
 		}
-		pp = TCPProxyProto.NewProxyProto()
-		Err := pp.Parse(buff[:n]).GetError() //.GetCode()
+		cache = append(cache, buff[:n]...)
+		pp = kdp.NewKDP()
+		Err := pp.Parse(cache).GetError() //.GetCode()
 		if Err.GetCode() != 0 {
 			fmt.Println("Parse Error:", Err.Error())
 			conn.Close()
 			//bExit <- false
 			break
 		}
-		switch pp.GetMethod() {
-		case TCPProxyProto.PROXY_PROTO_METHOD_REQ:
+		cache = cache[pp.GetProtoLen():]
+		fmt.Println("收到请求:\n" + pp.HeaderString())
+		switch method, _ := pp.Get("Method"); method {
+		case "REQ":
 			Req(conn, pp)
+		case "Close":
+			Close(conn, pp)
 		}
 	}
 	//<-bExit
@@ -119,13 +127,12 @@ func ConnRun(cp *ConnPair) {
 			fmt.Println(err.Error())
 			break
 		}
-
-		pp := TCPProxyProto.NewProxyProto()
-		pp.StringifyRES().
-			StringifyRemoteAddr(cp.remoteAddr).
-			StringifyRemoteAddr(cp.dstConn.LocalAddr().String()).
+		pp := kdp.NewKDP()
+		pp.Add("Method", "RES").
+			Add("RemoteAddr", cp.remoteAddr).
 			StringifyBody(buff[:n]).
-			StringifyEnd()
+			Stringify()
+		fmt.Println("向代理服务发送:\n" + pp.HeaderString())
 		cp.proxyConn.Write(pp.GetBuff())
 	}
 }
@@ -140,20 +147,35 @@ func Create(pc net.Conn, ra string) (*ConnPair, error) {
 	return cp, nil
 }
 
-func Req(conn net.Conn, pp *TCPProxyProto.ProxyProto) {
-	cp, ok := ConnMap[pp.GetRemoteAddr()]
+func Close(conn net.Conn, pp *kdp.KDP) {
+	remoteAddr, ok := pp.Get("RemoteAddr")
+	if !ok {
+		panic("协议中没有找到 RemoteAddr")
+	}
+	cp, ok := ConnMap[remoteAddr]
+	if !ok {
+		return
+	}
+	cp.dstConn.Close()
+}
+
+func Req(conn net.Conn, pp *kdp.KDP) {
+	remoteAddr, ok := pp.Get("RemoteAddr")
+	if !ok {
+		panic("协议中没有找到 RemoteAddr")
+	}
+	cp, ok := ConnMap[remoteAddr]
 	if !ok {
 		// 创建一个新的连接
-		cpNew, err := Create(conn, pp.GetRemoteAddr())
+		cpNew, err := Create(conn, remoteAddr)
 		if err != nil {
 			// 发送关闭连接请求
 			return
 		}
-		ConnMap[pp.GetRemoteAddr()] = cpNew
+		ConnMap[remoteAddr] = cpNew
 		cp = cpNew
 	}
 	// 将数据发送到连接上
-	fmt.Println(cp)
 	cp.dstConn.Write(pp.GetBody())
 }
 

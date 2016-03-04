@@ -2,12 +2,12 @@
 package TCPServer
 
 import (
-	. "TCPProxy/TCPProxyProto"
 	"encoding/json"
 	"fmt"
 	"github.com/kolonse/KolonseWeb"
 	t "github.com/kolonse/TCPServer"
 	"github.com/kolonse/function"
+	"github.com/kolonse/kdp"
 	//	"io"
 	"net"
 	"strconv"
@@ -84,7 +84,7 @@ func (si *ServerInfo) Dump() string {
 	return ret
 }
 
-func (si *ServerInfo) ProcessProtoConn(conn net.Conn, pp *ProxyProto) {
+func (si *ServerInfo) ProcessProtoConn(conn net.Conn, pp *kdp.KDP) {
 	// 将连接信息进行赋值
 	connInfo := make(map[string]string)
 	json.Unmarshal(pp.GetBody(), &connInfo) // 读取出连接时填写的 name 字段
@@ -95,8 +95,13 @@ func (si *ServerInfo) ProcessProtoConn(conn net.Conn, pp *ProxyProto) {
 	si.ChannelConn.SetConn(conn)
 }
 
-func (si *ServerInfo) ProcessProtoRes(conn net.Conn, pp *ProxyProto) {
-	remoteAddr := pp.GetRemoteAddr()
+func (si *ServerInfo) ProcessProtoRes(conn net.Conn, pp *kdp.KDP) {
+	remoteAddr, ok := pp.Get("RemoteAddr")
+	if !ok {
+		//  连接已经不存在 通知客户端关闭连接
+		KolonseWeb.DefaultLogs().Error("协议不存在 RemoteAddr", remoteAddr)
+		return //
+	}
 	pWho, ok := si.Parters[remoteAddr]
 	if !ok {
 		//  连接已经不存在 通知客户端关闭连接
@@ -123,27 +128,26 @@ func (si *ServerInfo) channelRecv(conn *t.TCPConn, buff []byte, err error) {
 	}
 	si.Cache = append(si.Cache, buff...)
 	for {
-		pp := NewProxyProto()
+		pp := kdp.NewKDP()
 		Err := pp.Parse(si.Cache).GetError()
-		if Err.GetCode() == RPOXY_PROTO_ERROR_LENGTH {
+		if Err.GetCode() == kdp.KDP_PROTO_ERROR_LENGTH {
 			KolonseWeb.DefaultLogs().Warn("Addr r_%v|l_%v Warn:%v", conn.RemoteAddr(), conn.LocalAddr(), Err.Error())
 			return
-		} else if Err.GetCode() != RPOXY_PROTO_SUCCESS {
-			KolonseWeb.DefaultLogs().Error("Addr r_%v|l_%v Error:%v", conn.RemoteAddr(), conn.LocalAddr(), Err.Error())
+		} else if Err.GetCode() != kdp.KDP_PROTO_SUCCESS {
+			KolonseWeb.DefaultLogs().Error("Addr r_%v|l_%v Buff:%v Error:%v", conn.RemoteAddr(), conn.LocalAddr(), string(buff), Err.Error())
 			conn.Close()
 			return
 		}
-		KolonseWeb.DefaultLogs().Debug("RECV:%v %v", pp.GetMethod(), pp.GetVersion())
-		switch pp.GetMethod() { // 处理协议
-		case PROXY_PROTO_METHOD_CONN:
+		switch method, _ := pp.Get("Method"); method { // 处理协议
+		case "CONN":
 			si.ProcessProtoConn(conn.Conn, pp)
-		case PROXY_PROTO_METHOD_RES:
+		case "RES":
 			si.ProcessProtoRes(conn.Conn, pp)
 		}
 
 		si.Cache = si.Cache[pp.GetProtoLen():]
-		if len(si.Cache) <= ProtoMinLength() {
-			return
+		if len(si.Cache) == 0 {
+			break
 		}
 	}
 }
@@ -161,10 +165,10 @@ func (si *ServerInfo) serverConn(conn *t.TCPConn) {
 func (si *ServerInfo) serverRecv(conn *t.TCPConn, buff []byte, err error) {
 	// 收到用户数据
 	if err != nil {
-		pp := NewProxyProto()
-		pp.StringifyClose().
-			StringifyRemoteAddr(conn.RemoteAddr().String()).
-			StringifyEnd()
+		pp := kdp.NewKDP()
+		pp.Add("Method", "Close").
+			Add("RemoteAddr", conn.RemoteAddr().String()).
+			Stringify()
 		// 将数据发送出去
 		_, err := si.ChannelConn.conn.Write(pp.GetBuff())
 		if err != nil {
@@ -179,11 +183,11 @@ func (si *ServerInfo) serverRecv(conn *t.TCPConn, buff []byte, err error) {
 		conn.RemoteAddr(),
 		conn.LocalAddr(),
 		len(buff))
-	pp := NewProxyProto()
-	pp.StringifyREQ().
-		StringifyRemoteAddr(conn.RemoteAddr().String()).
+	pp := kdp.NewKDP()
+	pp.Add("Method", "REQ").
+		Add("RemoteAddr", conn.RemoteAddr().String()).
 		StringifyBody(buff).
-		StringifyEnd()
+		Stringify()
 	fmt.Println("SEND:\n" + pp.HeaderString() + "\n")
 	// 将数据发送出去
 	if si.ChannelConn.conn == nil {
