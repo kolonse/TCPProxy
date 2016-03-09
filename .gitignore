@@ -44,3 +44,5 @@ Temporary Items
 RTCPProxyClient/RTCPProxyClient.exe
 RTCPProxyServer/RTCPProxyServer.exe
 *.exe
+RTCPProxyClient/RTCPProxyClient.exe
+*.exe
