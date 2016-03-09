@@ -109,7 +109,30 @@ func (si *ServerInfo) ProcessProtoRes(conn net.Conn, pp *kdp.KDP) {
 		return //
 	}
 	// 发送消息
+	KolonseWeb.DefaultLogs().Info("向请求源 %v 发送数据,长度:%v",
+		conn.RemoteAddr().String(),
+		len(pp.GetBody()))
 	pWho.conn.Write(pp.GetBody())
+}
+
+func (si *ServerInfo) ProcessProtoClose(conn net.Conn, pp *kdp.KDP) {
+	remoteAddr, ok := pp.Get("RemoteAddr")
+	if !ok {
+		//  连接已经不存在 通知客户端关闭连接
+		KolonseWeb.DefaultLogs().Error("协议不存在 RemoteAddr", remoteAddr)
+		return //
+	}
+	pWho, ok := si.Parters[remoteAddr]
+	if !ok {
+		//  连接已经不存在 通知客户端关闭连接
+		KolonseWeb.DefaultLogs().Error("RemoteAddr:%v not found", remoteAddr)
+		return //
+	}
+	// 发送消息
+	KolonseWeb.DefaultLogs().Info("向请求源 %v 发送数据,长度:%v",
+		conn.RemoteAddr().String(),
+		len(pp.GetBody()))
+	pWho.conn.Close()
 }
 
 func (si *ServerInfo) channelConn(conn *t.TCPConn) {
@@ -117,15 +140,23 @@ func (si *ServerInfo) channelConn(conn *t.TCPConn) {
 	KolonseWeb.DefaultLogs().Info("收到隧道连接 Remote:%v Local:%v",
 		conn.RemoteAddr().String(),
 		conn.LocalAddr().String())
+	si.Cache = []byte("")
 }
 
 func (si *ServerInfo) channelRecv(conn *t.TCPConn, buff []byte, err error) {
 	if err != nil {
 		// 关闭所有的服务连接
+		for _, value := range si.Parters {
+			value.conn.Close()
+		}
+		// 关闭当前的监听连接
+		si.Channel.Stop()
+		si.Server.Stop()
 		//conn.Close()
 		KolonseWeb.DefaultLogs().Error("隧道连接 Addr r_%v|l_%v Error:%v", conn.RemoteAddr(), conn.LocalAddr(), err.Error())
 		return
 	}
+	KolonseWeb.DefaultLogs().Info("Addr r_%v|l_%v 收到隧道数据,长度:%v", conn.RemoteAddr(), conn.LocalAddr(), len(buff))
 	si.Cache = append(si.Cache, buff...)
 	for {
 		pp := kdp.NewKDP()
@@ -143,6 +174,8 @@ func (si *ServerInfo) channelRecv(conn *t.TCPConn, buff []byte, err error) {
 			si.ProcessProtoConn(conn.Conn, pp)
 		case "RES":
 			si.ProcessProtoRes(conn.Conn, pp)
+		case "Close":
+			si.ProcessProtoClose(conn.Conn, pp)
 		}
 
 		si.Cache = si.Cache[pp.GetProtoLen():]
@@ -177,6 +210,7 @@ func (si *ServerInfo) serverRecv(conn *t.TCPConn, buff []byte, err error) {
 				conn.LocalAddr(),
 				err.Error())
 		}
+		delete(si.Parters, conn.RemoteAddr().String())
 		return
 	}
 	KolonseWeb.DefaultLogs().Info("服务连接 Addr r_%v|l_%v 收到数据,size:%v",

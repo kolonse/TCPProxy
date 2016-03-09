@@ -2,7 +2,7 @@
 package main
 
 import (
-	. "TCPProxy/TCPProxyProto"
+	"TCPProxy/TCPProxyProto"
 	"encoding/json"
 	"fmt"
 	"github.com/kolonse/kdp"
@@ -13,31 +13,41 @@ import (
 	"time"
 )
 
-func RegisterProxy() *RespProto {
+func RegisterProxy() *TCPProxyProto.RespProto {
 	var httpHost = fmt.Sprintf("http://%v/RegisterProxy?domain=%v&name=%v&port=%v",
 		*Server, *ProxyDomain, *ProxyName,
 		*UsePort)
 	fmt.Println("Request " + httpHost)
+	respInfo := TCPProxyProto.NewRespProto(0, "", nil)
 	resp, err := http.Get(httpHost)
 	if err != nil {
-		return nil
+		respInfo.Code = -1
+		respInfo.Message = err.Error()
+		return respInfo
 	}
 	defer resp.Body.Close()
 	buff, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil
+		respInfo.Code = -1
+		respInfo.Message = err.Error()
+		return respInfo
 	}
 	fmt.Println(string(buff))
-	respInfo := NewRespProto(0, "", nil)
+
 	err = json.Unmarshal(buff, &respInfo)
 	if err != nil {
-		return nil
+		respInfo.Code = -1
+		respInfo.Message = err.Error()
+		return respInfo
 	}
 	return respInfo
 }
 
-func CheckServerStatus(rp *RespProto) bool {
-	if rp.Code != RPOXY_PROTO_SUCCESS {
+func CheckServerStatus(rp *TCPProxyProto.RespProto) bool {
+	if rp == nil {
+		return false
+	}
+	if rp.Code != TCPProxyProto.RPOXY_PROTO_SUCCESS {
 		return false
 	}
 	return true
@@ -125,6 +135,13 @@ func ConnRun(cp *ConnPair) {
 		n, err := cp.dstConn.Read(buff)
 		if err != nil {
 			fmt.Println(err.Error())
+			// 需要向隧道服务发送 服务连接已经关闭的消息
+			pp := kdp.NewKDP()
+			pp.Add("Method", "Close").
+				Add("RemoteAddr", cp.remoteAddr).
+				Stringify()
+			fmt.Println("向代理服务发送:\n" + pp.HeaderString())
+			cp.proxyConn.Write(pp.GetBuff())
 			break
 		}
 		pp := kdp.NewKDP()
@@ -186,10 +203,9 @@ func main() {
 		respInfo := RegisterProxy()
 		if !CheckServerStatus(respInfo) {
 			fmt.Println("code:", respInfo.Code, " message:", respInfo.Message)
-			return
+		} else {
+			ServerStart()
 		}
-
-		ServerStart()
 		time.Sleep(500 * time.Millisecond)
 	}
 }
