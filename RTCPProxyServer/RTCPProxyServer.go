@@ -4,13 +4,22 @@ package main
 import (
 	"TCPProxy/RTCPProxyServer/TCPServer"
 	. "TCPProxy/TCPProxyProto"
+	"github.com/kardianos/service"
 	"github.com/kolonse/KolonseWeb"
 	"github.com/kolonse/KolonseWeb/HttpLib"
 	"github.com/kolonse/KolonseWeb/Type"
 	"strconv"
 )
 
-func main() {
+type program struct{}
+
+func (p *program) Start(s service.Service) error {
+	go p.run()
+	return nil
+}
+
+func (p *program) run() {
+	// Do work here
 	KolonseWeb.DefaultApp.Get("/RegisterProxy", func(req *HttpLib.Request, res *HttpLib.Response, next Type.Next) {
 		port := req.URL.Query().Get("port") // 启动监听端口
 		KolonseWeb.DefaultLogs().Info("处理客户端请求 Req Client Addr:%v Register Port:%v",
@@ -22,4 +31,31 @@ func main() {
 		res.Json(NewRespProto(RPOXY_PROTO_SUCCESS, "", nil)) // 返回服务状态
 	})
 	KolonseWeb.DefaultApp.Listen("0.0.0.0", *Port)
+}
+
+func (p *program) Stop(s service.Service) error {
+	// Stop should not block. Return with a few seconds.
+	return nil
+}
+
+func main() {
+	svcConfig := &service.Config{
+		Name:        "RTCPProxyServer",
+		DisplayName: "逆向TCP代理服务",
+		Description: "主要用来处理第三方回调的问题 方便调试",
+	}
+
+	prg := &program{}
+	s, err := service.New(prg, svcConfig)
+	if err != nil {
+		KolonseWeb.DefaultLogs().Error(err.Error())
+	}
+	logger, err := s.Logger(nil)
+	if err != nil {
+		KolonseWeb.DefaultLogs().Error(err.Error())
+	}
+	err = s.Run()
+	if err != nil {
+		logger.Error(err)
+	}
 }
