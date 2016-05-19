@@ -2,9 +2,9 @@
 package main
 
 import (
-	"TCPProxy/TCPProxyProto"
 	"encoding/json"
 	"fmt"
+	"github.com/kolonse/TCPProxy/TCPProxyProto"
 	"github.com/kolonse/kdp"
 	"io/ioutil"
 	"net"

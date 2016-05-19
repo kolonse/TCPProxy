@@ -2,12 +2,12 @@
 package main
 
 import (
-	"TCPProxy/RTCPProxyServer/TCPServer"
-	. "TCPProxy/TCPProxyProto"
 	"github.com/kardianos/service"
 	"github.com/kolonse/KolonseWeb"
 	"github.com/kolonse/KolonseWeb/HttpLib"
 	"github.com/kolonse/KolonseWeb/Type"
+	"github.com/kolonse/TCPProxy/RTCPProxyServer/TCPServer"
+	. "github.com/kolonse/TCPProxy/TCPProxyProto"
 	"strconv"
 )
 
@@ -27,8 +27,13 @@ func (p *program) run() {
 		// 创建一个TCP服务 然后启动
 		portInt, _ := strconv.Atoi(port)
 		ts := TCPServer.NewServerInfo()
-		ts.Start(portInt)
-		res.Json(NewRespProto(RPOXY_PROTO_SUCCESS, "", nil)) // 返回服务状态
+		err := ts.Start(portInt)
+		if err != nil {
+			res.Json(NewRespProto(RPOXY_PROTO_ERROR_NET, err.Error(), nil)) // 返回服务状态
+
+		} else {
+			res.Json(NewRespProto(RPOXY_PROTO_SUCCESS, "", nil)) // 返回服务状态
+		}
 	})
 	KolonseWeb.DefaultApp.Listen("0.0.0.0", *Port)
 }

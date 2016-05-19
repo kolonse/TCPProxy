@@ -259,9 +259,11 @@ func (si *ServerInfo) Start(port int) error {
 		function.P_1,
 		function.P_2,
 		function.P_3))
-	go si.Channel.Server()
-	go si.Server.Server()
-	return nil
+	err := si.Channel.Server()
+	if err == nil {
+		err = si.Server.Server()
+	}
+	return err
 }
 
 func NULLServerInfo() *ServerInfo {
