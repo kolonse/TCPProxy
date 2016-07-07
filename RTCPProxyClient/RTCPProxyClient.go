@@ -93,21 +93,27 @@ func ServerStart() {
 			break
 		}
 		cache = append(cache, buff[:n]...)
-		pp = kdp.NewKDP()
-		Err := pp.Parse(cache).GetError() //.GetCode()
-		if Err.GetCode() != 0 {
-			fmt.Println("Parse Error:", Err.Error())
-			conn.Close()
-			//bExit <- false
-			break
-		}
-		cache = cache[pp.GetProtoLen():]
-		fmt.Println("收到请求:\n" + pp.HeaderString())
-		switch method, _ := pp.Get("Method"); method {
-		case "REQ":
-			Req(conn, pp)
-		case "Close":
-			Close(conn, pp)
+		for {
+			pp := kdp.NewKDP()
+			Err := pp.Parse(cache).GetError() //.GetCode()
+			if Err.GetCode() == kdp.KDP_PROTO_ERROR_LENGTH {
+				break
+			} else if Err.GetCode() != kdp.KDP_PROTO_SUCCESS {
+				fmt.Println("Parse Error:", Err.Error())
+				conn.Close()
+				return
+			}
+			cache = cache[pp.GetProtoLen():]
+			fmt.Println("收到请求:\n" + pp.HeaderString())
+			switch method, _ := pp.Get("Method"); method {
+			case "REQ":
+				Req(conn, pp)
+			case "Close":
+				Close(conn, pp)
+			}
+			if len(cache) == 0 {
+				break
+			}
 		}
 	}
 	//<-bExit
